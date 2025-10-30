@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MediaPipe Body Tracking → OSC</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: #1a1a1a;
+            color: #ffffff;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            margin-bottom: 20px;
+            color: #00ff88;
+        }
+
+        .main-content {
+            display: grid;
+            grid-template-columns: 1fr 350px;
+            gap: 20px;
+        }
+
+        .video-container {
+            position: relative;
+            background: #000;
+            border-radius: 8px;
+            overflow: hidden;
+            aspect-ratio: 16 / 9;
+        }
+
+        #video {
+            display: none;
+        }
+
+        #canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+
+        .controls {
+            background: #2a2a2a;
+            padding: 20px;
+            border-radius: 8px;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+
+        .control-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        label {
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+            color: #aaa;
+        }
+
+        input[type="text"],
+        input[type="number"] {
+            padding: 8px 12px;
+            background: #1a1a1a;
+            border: 1px solid #444;
+            border-radius: 4px;
+            color: #fff;
+            font-size: 14px;
+        }
+
+        input[type="checkbox"] {
+            width: 20px;
+            height: 20px;
+        }
+
+        button {
+            padding: 12px 20px;
+            background: #00ff88;
+            color: #000;
+            border: none;
+            border-radius: 4px;
+            font-weight: 600;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.2s;
+        }
+
+        button:hover {
+            background: #00dd77;
+        }
+
+        button:disabled {
+            background: #555;
+            cursor: not-allowed;
+        }
+
+        .status {
+            padding: 10px;
+            background: #333;
+            border-radius: 4px;
+            font-size: 12px;
+            font-family: monospace;
+        }
+
+        .status.active {
+            background: #00ff8822;
+            border: 1px solid #00ff88;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            font-size: 11px;
+        }
+
+        .stat-item {
+            background: #333;
+            padding: 8px;
+            border-radius: 4px;
+        }
+
+        .stat-label {
+            color: #888;
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        .stat-value {
+            color: #00ff88;
+            font-weight: 600;
+            font-size: 16px;
+        }
+
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .divider {
+            height: 1px;
+            background: #444;
+            margin: 10px 0;
+        }
+
+        h3 {
+            color: #00ff88;
+            font-size: 14px;
+            margin-bottom: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📹 MediaPipe Body Tracking → OSC</h1>
+        
+        <div class="main-content">
+            <div class="video-container">
+                <video id="video" autoplay playsinline></video>
+                <canvas id="canvas"></canvas>
+            </div>
+
+            <div class="controls">
+                <div class="control-group">
+                    <button id="startBtn">Start Tracking</button>
+                </div>
+
+                <div class="status" id="status">
+                    Ready to start
+                </div>
+
+                <div class="divider"></div>
+
+                <h3>Camera Settings</h3>
+                
+                <div class="control-group">
+                    <label>Select Camera</label>
+                    <select id="cameraSelect" style="padding: 8px 12px; background: #1a1a1a; border: 1px solid #444; border-radius: 4px; color: #fff; font-size: 14px;">
+                        <!-- Cameras will be populated here -->
+                    </select>
+                </div>
+
+                <div class="divider"></div>
+
+                <h3>OSC Settings</h3>
+                
+                <div class="control-group">
+                    <label>Remote IP Address</label>
+                    <input type="text" id="oscIp" value="127.0.0.1" placeholder="127.0.0.1">
+                </div>
+
+                <div class="control-group">
+                    <label>Remote Port</label>
+                    <input type="number" id="oscPort" value="8000" placeholder="8000">
+                </div>
+
+                <div class="control-group">
+                    <button id="updateOscBtn">Update OSC Config</button>
+                </div>
+
+                <div class="divider"></div>
+
+                <h3>Tracking Options</h3>
+
+                <div class="checkbox-group">
+                    <input type="checkbox" id="drawSkeleton" checked>
+                    <label for="drawSkeleton">Draw Skeleton</label>
+                </div>
+
+                <div class="checkbox-group">
+                    <input type="checkbox" id="drawLandmarks" checked>
+                    <label for="drawLandmarks">Draw Landmarks</label>
+                </div>
+
+                <div class="divider"></div>
+
+                <h3>Statistics</h3>
+
+                <div class="stats">
+                    <div class="stat-item">
+                        <span class="stat-label">FPS</span>
+                        <span class="stat-value" id="fps">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">OSC Messages</span>
+                        <span class="stat-value" id="oscCount">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Landmarks</span>
+                        <span class="stat-value" id="landmarkCount">0</span>
+                    </div>
+                    <div class="stat-item">
+                        <span class="stat-label">Confidence</span>
+                        <span class="stat-value" id="confidence">0%</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose/pose.js" crossorigin="anonymous"></script>
+    <script src="renderer.js"></script>
+</body>
+</html>
