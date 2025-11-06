@@ -29,7 +29,11 @@ In your `BP_OSC_Character` blueprint, create these variables:
 
 **Variable Name** | **Type** | **Description**
 --- | --- | ---
-`NosePosition` | Vector | Head/nose position
+`NosePosition` | Vector | Nose position (for head tracking)
+`LeftEyePosition` | Vector | Left eye (for head rotation)
+`RightEyePosition` | Vector | Right eye (for head rotation)
+`LeftEarPosition` | Vector | Left ear (for head rotation)
+`RightEarPosition` | Vector | Right ear (for head rotation)
 `LeftShoulderPosition` | Vector | Left shoulder
 `RightShoulderPosition` | Vector | Right shoulder
 `LeftElbowPosition` | Vector | Left elbow
@@ -42,6 +46,8 @@ In your `BP_OSC_Character` blueprint, create these variables:
 `RightKneePosition` | Vector | Right knee
 `LeftAnklePosition` | Vector | Left ankle
 `RightAnklePosition` | Vector | Right ankle
+
+**Note:** For accurate head rotation, you need multiple facial landmarks (eyes and ears), not just the nose!
 
 ### Step 3: Create OSC Receiver Custom Events
 
@@ -73,7 +79,7 @@ In **Event BeginPlay**:
 
 MediaPipe gives you **positions**, but skeletons need **rotations**. You need to calculate the rotation between two joints:
 
-**Blueprint Function: CalculateBoneRotation**
+**Blueprint Function: CalculateBoneRotation (For Limbs)**
 
 ```
 Inputs:
@@ -90,19 +96,83 @@ Logic:
   4. Return the rotator
 ```
 
+**Blueprint Function: CalculateHeadRotation (Special Case)**
+
+The head needs multiple landmarks to determine rotation properly:
+
+```
+Inputs:
+  - NosePos (Vector)
+  - LeftEyePos (Vector)
+  - RightEyePos (Vector)
+  - LeftEarPos (Vector)
+  - RightEarPos (Vector)
+  
+Output:
+  - HeadRotation (Rotator)
+
+Logic:
+  1. Calculate Forward Vector:
+     - EyeCenter = (LeftEyePos + RightEyePos) / 2
+     - Forward = NosePos - EyeCenter
+     - Normalize Forward
+     
+  2. Calculate Right Vector:
+     - Right = RightEyePos - LeftEyePos
+     - Normalize Right
+     
+  3. Calculate Up Vector:
+     - EarCenter = (LeftEarPos + RightEarPos) / 2
+     - Up = EarCenter - EyeCenter
+     - Normalize Up
+     
+  4. Make Rotation from Axes:
+     - Use "Make Rot from XZ" or "Find Look at Rotation"
+     - X = Forward, Z = Up
+     - Return rotator
+```
+
+**Alternative Simpler Head Rotation:**
+
+If you don't need perfect accuracy, you can use just eyes and nose:
+
+```
+Inputs:
+  - NosePos (Vector)
+  - LeftEyePos (Vector)
+  - RightEyePos (Vector)
+
+Logic:
+  1. Calculate head center: HeadCenter = (LeftEyePos + RightEyePos) / 2
+  2. Forward direction: NosePos - HeadCenter
+  3. Make rotation from forward vector
+  4. Return rotator
+```
+
 ### Step 6: Apply Rotations to Skeleton
 
 In **Event Tick**:
 
 ```
-1. Calculate Right Arm Rotation:
-   - BoneRot = CalculateBoneRotation(RightShoulder, RightElbow)
+1. Calculate Head Rotation:
+   - HeadRot = CalculateHeadRotation(Nose, LeftEye, RightEye, LeftEar, RightEar)
    
 2. Set Bone Rotation by Name:
+   - Target: Skeletal Mesh Component
+   - Bone Name: "head" or "neck"
+   - Rotation: HeadRot
+   - Space: World Space
+
+3. Calculate Right Arm Rotation:
+   - BoneRot = CalculateBoneRotation(RightShoulder, RightElbow)
+   
+4. Set Bone Rotation by Name:
    - Target: Skeletal Mesh Component
    - Bone Name: "upperarm_r" (or your skeleton's bone name)
    - Rotation: BoneRot
    - Space: World Space
+   
+5. Repeat for all other limbs...
 ```
 
 ---
@@ -188,6 +258,32 @@ In Event Tick:
 
 ---
 
+## MediaPipe Landmarks for Head Tracking
+
+To properly track head rotation, use these MediaPipe landmarks:
+
+**Landmark Index** | **Name** | **OSC Address** | **Purpose**
+--- | --- | --- | ---
+0 | nose | `/pose/nose/position` | Front of face (forward direction)
+1 | left_eye_inner | `/pose/left_eye_inner/position` | Eye positioning
+2 | left_eye | `/pose/left_eye/position` | Left eye center (horizontal axis)
+3 | left_eye_outer | `/pose/left_eye_outer/position` | Eye outer edge
+4 | right_eye_inner | `/pose/right_eye_inner/position` | Eye positioning
+5 | right_eye | `/pose/right_eye/position` | Right eye center (horizontal axis)
+6 | right_eye_outer | `/pose/right_eye_outer/position` | Eye outer edge
+7 | left_ear | `/pose/left_ear/position` | Left ear (vertical axis)
+8 | right_ear | `/pose/right_ear/position` | Right ear (vertical axis)
+
+**Minimum required for head rotation:**
+- Nose (forward direction)
+- Left Eye (horizontal reference)
+- Right Eye (horizontal reference)
+
+**Recommended for better accuracy:**
+- Add Left Ear and Right Ear for pitch/roll calculation
+
+---
+
 ## Coordinate System Conversion
 
 MediaPipe coordinates are normalized (0-1 range). You need to scale them for Unreal:
@@ -233,6 +329,70 @@ left_ankle | foot_l
 right_ankle | foot_r
 
 **Note:** Bone names vary by skeleton. Check your skeleton asset to find exact names.
+
+---
+
+## Example Blueprint: Head Tracking
+
+Here's a complete example for controlling head rotation:
+
+### Variables:
+```
+NosePos (Vector)
+LeftEyePos (Vector)
+RightEyePos (Vector)
+LeftEarPos (Vector)
+RightEarPos (Vector)
+SkeletalMeshComp (Skeletal Mesh Component)
+ScaleFactor (Float) = 200.0
+```
+
+### Event BeginPlay:
+```
+1. Create OSC Server (Port: 8000)
+2. Store OSC Server as variable
+3. Bind Address "/pose/nose/position" to OnNoseReceived
+4. Bind Address "/pose/left_eye/position" to OnLeftEyeReceived
+5. Bind Address "/pose/right_eye/position" to OnRightEyeReceived
+6. Bind Address "/pose/left_ear/position" to OnLeftEarReceived
+7. Bind Address "/pose/right_ear/position" to OnRightEarReceived
+```
+
+### Custom Event: OnNoseReceived
+```
+Inputs: X (Float), Y (Float), Z (Float)
+1. Make Vector from X, Y, Z
+2. Convert to Unreal space
+3. Set NosePos variable
+```
+*(Repeat similar events for LeftEye, RightEye, LeftEar, RightEar)*
+
+### Event Tick:
+```
+1. Calculate eye center:
+   - EyeCenter = (LeftEyePos + RightEyePos) / 2.0
+
+2. Calculate forward direction:
+   - Forward = NosePos - EyeCenter
+   - Forward = Normalize(Forward)
+
+3. Calculate right direction:
+   - Right = RightEyePos - LeftEyePos
+   - Right = Normalize(Right)
+
+4. Calculate up direction:
+   - Up = Cross Product(Forward, Right)
+   - Up = Normalize(Up)
+
+5. Make rotation from axes:
+   - HeadRotation = Make Rotation from Axes(Forward, Right, Up)
+
+6. Set Bone Transform by Name:
+   - Skeletal Mesh: SkeletalMeshComp
+   - Bone Name: "head"
+   - Rotation: HeadRotation
+   - Space: World Space
+```
 
 ---
 
