@@ -66,6 +66,29 @@ Address: /pose/{landmark_name}/visibility
 Args: [visibility] (float, 0-1)
 ```
 
+### Joint Rotations (NEW!)
+```
+Address: /pose/{joint_name}/rotation
+Args: [pitch, yaw, roll] (floats, degrees)
+```
+
+Available joint rotations:
+- `/pose/head/rotation` - Head rotation (from facial landmarks)
+- `/pose/right_upper_arm/rotation` - Right shoulder to elbow
+- `/pose/right_lower_arm/rotation` - Right elbow to wrist
+- `/pose/left_upper_arm/rotation` - Left shoulder to elbow
+- `/pose/left_lower_arm/rotation` - Left elbow to wrist
+- `/pose/right_upper_leg/rotation` - Right hip to knee
+- `/pose/right_lower_leg/rotation` - Right knee to ankle
+- `/pose/left_upper_leg/rotation` - Left hip to knee
+- `/pose/left_lower_leg/rotation` - Left knee to ankle
+- `/pose/torso/rotation` - Torso orientation (shoulders to hips)
+
+**Rotation values:**
+- **Pitch**: Up/down rotation (degrees, -180 to 180)
+- **Yaw**: Left/right rotation (degrees, -180 to 180)
+- **Roll**: Tilt rotation (degrees, -180 to 180)
+
 ### All Landmarks Bundle
 ```
 Address: /pose/all

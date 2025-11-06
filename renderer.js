@@ -117,6 +117,59 @@ function onResults(results) {
     }
 }
 
+// Calculate rotation between two points (returns euler angles in degrees)
+function calculateRotation(startPoint, endPoint) {
+    // Calculate direction vector
+    const dx = endPoint.x - startPoint.x;
+    const dy = endPoint.y - startPoint.y;
+    const dz = endPoint.z - startPoint.z;
+    
+    // Calculate pitch (rotation around X axis)
+    const pitch = Math.atan2(dy, Math.sqrt(dx * dx + dz * dz)) * (180 / Math.PI);
+    
+    // Calculate yaw (rotation around Y axis)
+    const yaw = Math.atan2(dx, dz) * (180 / Math.PI);
+    
+    // Calculate roll (rotation around Z axis) - approximation
+    const roll = Math.atan2(dx, dy) * (180 / Math.PI);
+    
+    return { pitch, yaw, roll };
+}
+
+// Calculate head rotation from facial landmarks
+function calculateHeadRotation(landmarks) {
+    const nose = landmarks[0];
+    const leftEye = landmarks[2];
+    const rightEye = landmarks[5];
+    const leftEar = landmarks[7];
+    const rightEar = landmarks[8];
+    
+    if (!nose || !leftEye || !rightEye) return null;
+    
+    // Calculate eye center
+    const eyeCenterX = (leftEye.x + rightEye.x) / 2;
+    const eyeCenterY = (leftEye.y + rightEye.y) / 2;
+    const eyeCenterZ = (leftEye.z + rightEye.z) / 2;
+    
+    // Forward direction (nose relative to eye center)
+    const forwardX = nose.x - eyeCenterX;
+    const forwardY = nose.y - eyeCenterY;
+    const forwardZ = nose.z - eyeCenterZ;
+    
+    // Yaw (left-right rotation)
+    const yaw = Math.atan2(forwardX, forwardZ) * (180 / Math.PI);
+    
+    // Pitch (up-down rotation)
+    const pitch = Math.atan2(-forwardY, Math.sqrt(forwardX * forwardX + forwardZ * forwardZ)) * (180 / Math.PI);
+    
+    // Roll (tilt) from eye positions
+    const eyeDeltaY = rightEye.y - leftEye.y;
+    const eyeDeltaX = rightEye.x - leftEye.x;
+    const roll = Math.atan2(eyeDeltaY, eyeDeltaX) * (180 / Math.PI);
+    
+    return { pitch, yaw, roll };
+}
+
 // Send pose data via OSC
 function sendPoseDataViaOSC(landmarks) {
     if (!landmarks || !isTracking) return; // Only send when tracking is active
@@ -145,6 +198,58 @@ function sendPoseDataViaOSC(landmarks) {
             });
         }
     });
+    
+    // Calculate and send rotations for key joints
+    const rotations = {
+        // Head rotation
+        head: calculateHeadRotation(landmarks),
+        
+        // Right arm rotations
+        right_upper_arm: landmarks[12] && landmarks[14] ? calculateRotation(landmarks[12], landmarks[14]) : null, // shoulder to elbow
+        right_lower_arm: landmarks[14] && landmarks[16] ? calculateRotation(landmarks[14], landmarks[16]) : null, // elbow to wrist
+        
+        // Left arm rotations
+        left_upper_arm: landmarks[11] && landmarks[13] ? calculateRotation(landmarks[11], landmarks[13]) : null, // shoulder to elbow
+        left_lower_arm: landmarks[13] && landmarks[15] ? calculateRotation(landmarks[13], landmarks[15]) : null, // elbow to wrist
+        
+        // Right leg rotations
+        right_upper_leg: landmarks[24] && landmarks[26] ? calculateRotation(landmarks[24], landmarks[26]) : null, // hip to knee
+        right_lower_leg: landmarks[26] && landmarks[28] ? calculateRotation(landmarks[26], landmarks[28]) : null, // knee to ankle
+        
+        // Left leg rotations
+        left_upper_leg: landmarks[23] && landmarks[25] ? calculateRotation(landmarks[23], landmarks[25]) : null, // hip to knee
+        left_lower_leg: landmarks[25] && landmarks[27] ? calculateRotation(landmarks[25], landmarks[27]) : null, // knee to ankle
+        
+        // Torso rotation
+        torso: landmarks[11] && landmarks[12] && landmarks[23] && landmarks[24] ? 
+            calculateRotation(
+                { // Average of shoulders
+                    x: (landmarks[11].x + landmarks[12].x) / 2,
+                    y: (landmarks[11].y + landmarks[12].y) / 2,
+                    z: (landmarks[11].z + landmarks[12].z) / 2
+                },
+                { // Average of hips
+                    x: (landmarks[23].x + landmarks[24].x) / 2,
+                    y: (landmarks[23].y + landmarks[24].y) / 2,
+                    z: (landmarks[23].z + landmarks[24].z) / 2
+                }
+            ) : null
+    };
+    
+    // Send rotation data
+    Object.keys(rotations).forEach(jointName => {
+        const rotation = rotations[jointName];
+        if (rotation) {
+            window.electronAPI.sendOSC({
+                address: `/pose/${jointName}/rotation`,
+                args: [
+                    { type: 'f', value: rotation.pitch },
+                    { type: 'f', value: rotation.yaw },
+                    { type: 'f', value: rotation.roll }
+                ]
+            });
+        }
+    });
 
     // Send a bundle message with all landmarks
     const allPositions = landmarks.map(lm => [lm.x, lm.y, lm.z]).flat();
@@ -153,7 +258,7 @@ function sendPoseDataViaOSC(landmarks) {
         args: allPositions.map(val => ({ type: 'f', value: val }))
     });
 
-    oscMessageCount += landmarks.length + 1;
+    oscMessageCount += landmarks.length + Object.keys(rotations).filter(k => rotations[k]).length + 1;
     oscCountEl.textContent = oscMessageCount;
 }
 
